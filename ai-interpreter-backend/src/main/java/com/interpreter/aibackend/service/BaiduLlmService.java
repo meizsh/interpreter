@@ -122,7 +122,7 @@ public class BaiduLlmService {
      * 调用百度 LLM API (V2 标准)
      */
     private String callLlmApi(String prompt) throws Exception {
-        String accessToken = baiduApiService.getAccessToken();
+        String accessToken = baiduApiService.getAccessToken(false);
         String url = String.format(
                 "https://aip.baidubce.com/rpc/2.0/ai_custom/v1/wenxinworkshop/chat/%s?access_token=%s",
                 baiduApiConfig.getLlm().getModel(),

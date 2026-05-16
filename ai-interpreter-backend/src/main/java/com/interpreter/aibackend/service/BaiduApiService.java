@@ -33,7 +33,7 @@ public class BaiduApiService {
     /**
      * 获取 Access Token (百度 OAuth)
      */
-    public String getAccessToken() throws Exception {
+    public String getAccessToken(boolean useAsrCredentials) throws Exception {
         // 检查缓存的 token 是否还有效
         if (cachedAccessToken != null && System.currentTimeMillis() < tokenExpireTime) {
             logger.debug("使用缓存的 Access Token");
@@ -43,10 +43,13 @@ public class BaiduApiService {
         logger.info("获取新的 Access Token...");
         String url = "https://aip.baidubce.com/oauth/2.0/token";
 
+        String apiKey = useAsrCredentials ? baiduApiConfig.getAsr().getApiKey() : baiduApiConfig.getLlm().getApiKey();
+        String secretKey = useAsrCredentials ? baiduApiConfig.getAsr().getSecretKey() : baiduApiConfig.getLlm().getSecretKey();
+
         RequestBody body = new FormBody.Builder()
                 .add("grant_type", "client_credentials")
-                .add("client_id", baiduApiConfig.getLlm().getApiKey())
-                .add("client_secret", baiduApiConfig.getLlm().getSecretKey())
+                .add("client_id", apiKey)
+                .add("client_secret", secretKey)
                 .build();
 
         Request request = new Request.Builder()

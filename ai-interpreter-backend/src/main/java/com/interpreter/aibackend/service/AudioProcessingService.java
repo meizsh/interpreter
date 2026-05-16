@@ -102,12 +102,16 @@ public class AudioProcessingService {
     /**
      * 处理学生的口译录音
      */
-    public void processStudentAudio(String sessionId, byte[] audioContent) throws Exception {
+    public void processStudentAudio(String sessionId, byte[] audioContent, String originalFileName) throws Exception {
         logger.info("🎤 处理学生口译录音: {}", sessionId);
 
-        // 保存学生录音文件
+        // 保存学生录音文件，保留原始扩展名
         String timestamp = String.valueOf(System.currentTimeMillis());
-        String studentAudioPath = uploadDir + "/" + timestamp + "_student.mp3";
+        String extension = getFileExtension(originalFileName);
+        if (extension.isEmpty()) {
+            extension = "wav";
+        }
+        String studentAudioPath = uploadDir + "/" + timestamp + "_student." + extension;
         Files.write(Paths.get(studentAudioPath), audioContent);
 
         // 调用 ASR 识别学生口译
@@ -116,6 +120,17 @@ public class AudioProcessingService {
 
         // 更新会话
         sessionService.updateStudentTranslation(sessionId, studentTranslation);
+    }
+
+    private String getFileExtension(String filename) {
+        if (filename == null) {
+            return "";
+        }
+        int idx = filename.lastIndexOf('.');
+        if (idx < 0 || idx == filename.length() - 1) {
+            return "";
+        }
+        return filename.substring(idx + 1).toLowerCase();
     }
 
     /**

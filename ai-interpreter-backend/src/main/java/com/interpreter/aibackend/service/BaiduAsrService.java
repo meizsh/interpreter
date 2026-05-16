@@ -46,10 +46,12 @@ public class BaiduAsrService {
         logger.info("✓ 音频文件大小: {} 字节", audioData.length);
 
         // 获取 access token
-        String accessToken = baiduApiService.getAccessToken();
+        String accessToken = baiduApiService.getAccessToken(true);
 
         // 调用百度 ASR API
-        String result = callBaiduAsrApi(audioData, accessToken);
+        String format = getAsrFormat(audioFile.getName());
+        int rate = getAsrRate(audioFile);
+        String result = callBaiduAsrApi(audioData, accessToken, format, rate);
 
         logger.info("✓ 语音识别完成");
         return result;
@@ -58,7 +60,7 @@ public class BaiduAsrService {
     /**
      * 调用百度 ASR API
      */
-    private String callBaiduAsrApi(byte[] audioData, String accessToken) throws Exception {
+    private String callBaiduAsrApi(byte[] audioData, String accessToken, String format, int rate) throws Exception {
         String url = "https://vop.baidu.com/server_api";
 
         // 计算 MD5 和 speech 参数
@@ -70,8 +72,8 @@ public class BaiduAsrService {
         RequestBody formBody = new MultipartBody.Builder()
                 .setType(MultipartBody.FORM)
                 .addFormDataPart("speech", speech)
-                .addFormDataPart("format", baiduApiConfig.getAsr().getFormat())
-                .addFormDataPart("rate", String.valueOf(baiduApiConfig.getAsr().getRate()))
+                .addFormDataPart("format", format)
+                .addFormDataPart("rate", String.valueOf(rate))
                 .addFormDataPart("cuid", String.valueOf(cuid))
                 .addFormDataPart("token", accessToken)
                 .addFormDataPart("len", String.valueOf(audioData.length))
@@ -104,6 +106,46 @@ public class BaiduAsrService {
             String result = jsonResponse.getJSONArray("result").getString(0);
             logger.info("✓ 识别结果: {}", result);
             return result;
+        }
+    }
+
+    private String getAsrFormat(String filename) {
+        String lower = filename == null ? "" : filename.toLowerCase();
+        if (lower.endsWith(".wav")) {
+            return "wav";
+        }
+        if (lower.endsWith(".mp3")) {
+            return "mp3";
+        }
+        if (lower.endsWith(".m4a")) {
+            return "wav";
+        }
+        return baiduApiConfig.getAsr().getFormat();
+    }
+
+    private int getAsrRate(File file) {
+        String filename = file.getName().toLowerCase();
+        if (filename.endsWith(".wav")) {
+            try {
+                return readWavSampleRate(file);
+            } catch (Exception e) {
+                logger.warn("无法读取 WAV 采样率，使用默认值 {}", baiduApiConfig.getAsr().getRate(), e);
+                return baiduApiConfig.getAsr().getRate();
+            }
+        }
+        return baiduApiConfig.getAsr().getRate();
+    }
+
+    private int readWavSampleRate(File file) throws IOException {
+        try (FileInputStream fis = new FileInputStream(file)) {
+            byte[] header = new byte[44];
+            int read = fis.read(header);
+            if (read < 44) {
+                throw new IOException("WAV 文件头太短");
+            }
+            java.nio.ByteBuffer buffer = java.nio.ByteBuffer.wrap(header, 24, 4);
+            buffer.order(java.nio.ByteOrder.LITTLE_ENDIAN);
+            return buffer.getInt();
         }
     }
 

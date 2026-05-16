@@ -91,7 +91,7 @@ public class AudioController {
             }
 
             // 处理学生录音
-            audioProcessingService.processStudentAudio(sessionId, file.getBytes());
+            audioProcessingService.processStudentAudio(sessionId, file.getBytes(), file.getOriginalFilename());
 
             // 异步诊断学生翻译
             audioProcessingService.diagnoseStudentTranslation(sessionId);
