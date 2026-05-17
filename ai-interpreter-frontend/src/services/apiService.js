@@ -1,60 +1,45 @@
-const API_URL = import.meta.env.VITE_API_URL ?? 'http://localhost:8080';
+const BASE_URL = "http://localhost:8080/api";
 
-export async function uploadAudioFile(file) {
+// 1. 上传演讲原音音频
+export const uploadAudioFile = async (file) => {
   const formData = new FormData();
-  formData.append('file', file);
+  formData.append("file", file);
+  const response = await fetch(`${BASE_URL}/audio/upload`, { method: "POST", body: formData });
+  return await response.json();
+};
 
-  const response = await fetch(`${API_URL}/api/audio/upload`, {
-    method: 'POST',
-    body: formData,
-  });
+// 2. 获取 Session 状态
+export const getSessionStatus = async (sessionId) => {
+  const response = await fetch(`${BASE_URL}/session/${sessionId}`);
+  return await response.json();
+};
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: '上传失败' }));
-    throw new Error(error.message || '上传失败');
-  }
+// 3. 获取会话元数据（术语卡片、原文、标准答案）
+export const getSessionMetadata = async (sessionId) => {
+  const response = await fetch(`${BASE_URL}/session/${sessionId}/metadata`);
+  return await response.json();
+};
 
-  return response.json();
-}
-
-export async function getSessionMetadata(sessionId) {
-  const response = await fetch(`${API_URL}/api/session/${sessionId}/metadata`);
-  if (!response.ok) {
-    throw new Error('获取元数据失败');
-  }
-  return response.json();
-}
-
-export async function getSessionStatus(sessionId) {
-  const response = await fetch(`${API_URL}/api/session/${sessionId}/status`);
-  if (!response.ok) {
-    throw new Error('获取状态失败');
-  }
-  return response.json();
-}
-
-export async function uploadStudentAudio(sessionId, file) {
+// 4. 上传学生口译录音音频
+export const uploadStudentAudio = async (sessionId, audioBlob) => {
   const formData = new FormData();
-  formData.append('file', file);
+  // 必须和后端 Controller 要求的入参 @RequestParam("file") 一致
+  formData.append("file", audioBlob, "student_expression.wav"); 
+  const response = await fetch(`${BASE_URL}/audio/${sessionId}/student-audio`, { method: "POST", body: formData });
+  return await response.json();
+};
 
-  const response = await fetch(`${API_URL}/api/audio/${sessionId}/student-audio`, {
-    method: 'POST',
-    body: formData,
-  });
+// 5. 获取诊断报告
+export const getDiagnosisReport = async (sessionId) => {
+  const response = await fetch(`${BASE_URL}/session/${sessionId}/report`);
+  return await response.json();
+};
 
-  if (!response.ok) {
-    const error = await response.json().catch(() => ({ message: '上传学生录音失败' }));
-    throw new Error(error.message || '上传学生录音失败');
-  }
-
-  return response.json();
-}
-
-export async function getDiagnosisReport(sessionId) {
-  const response = await fetch(`${API_URL}/api/session/${sessionId}/report`);
-  if (!response.ok) {
-    const errorBody = await response.json().catch(() => ({}));
-    throw new Error(errorBody.message || '获取诊断报告失败');
-  }
-  return response.json();
-}
+// 向后兼容的对象导出
+export const apiService = {
+  uploadAudio: uploadAudioFile,
+  getSession: getSessionStatus,
+  uploadStudentAudio: uploadStudentAudio,
+  getSessionMetadata: getSessionMetadata,
+  getDiagnosisReport: getDiagnosisReport
+};
