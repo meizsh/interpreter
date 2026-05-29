@@ -1,7 +1,8 @@
-import React, { useState, useEffect, useRef } from 'react';
+﻿import React, { useState, useEffect, useRef } from 'react';
 import { uploadAudioFile, getSessionMetadata, getSessionStatus, uploadStudentAudio, getDiagnosisReport } from './services/apiService';
 
 const WS_URL = import.meta.env.VITE_WS_URL ?? 'ws://localhost:8080/ws/interpreter';
+const ASR_SAMPLE_RATE = 16000;
 
 export default function App() {
   const [hints, setHints] = useState([]);
@@ -12,6 +13,7 @@ export default function App() {
   const [isPlaying, setIsPlaying] = useState(false);
   const [sessionId, setSessionId] = useState(null);
   const [sessionStatus, setSessionStatus] = useState('idle');
+  const [interpretationDirection, setInterpretationDirection] = useState('en-zh');
   const [serverTip, setServerTip] = useState('请先上传一段口译音频，AI 将自动分析。');
   const [errorMessage, setErrorMessage] = useState('');
   const [loading, setLoading] = useState(false);
@@ -65,6 +67,9 @@ export default function App() {
 
         if (statusResponse.status === 'completed') {
           const metadata = await getSessionMetadata(sessionId);
+          if (metadata.interpretation_direction) {
+            setInterpretationDirection(metadata.interpretation_direction);
+          }
           const terms = Array.isArray(metadata.term_hints) ? metadata.term_hints : [];
           setHintPool(terms.map((item, index) => ({ id: `${item.term || item.source}-${index}`, ...item })));
           setServerTip('AI 已经在后台成功听写并预翻译，绝对标尺已锁定！');
@@ -118,7 +123,7 @@ export default function App() {
       try {
         const data = JSON.parse(event.data);
         if (data.hints && Array.isArray(data.hints) && data.hints.length > 0) {
-          setHints((prev) => [...data.hints, ...prev]);
+          setHints((prev) => mergeUniqueHints(data.hints, prev));
         }
       } catch (error) {
         console.warn('WebSocket 数据解析失败', error);
@@ -149,7 +154,7 @@ export default function App() {
     setSessionStatus('uploading');
 
     try {
-      const response = await uploadAudioFile(file);
+      const response = await uploadAudioFile(file, interpretationDirection);
       setSessionId(response.session_id);
       setSessionStatus(response.status || 'processing');
       setServerTip('AI 正在后台分析音频，请稍候...');
@@ -179,6 +184,11 @@ export default function App() {
 
   const startRecording = async () => {
     if (isRecording) return;
+    if (!sessionId) {
+      setErrorMessage('请先上传口译素材，等待 AI 分析完成后再录制学生口译。');
+      setServerTip('需要先准备训练素材。');
+      return;
+    }
     setErrorMessage('');
     setServerTip('正在请求麦克风权限...');
 
@@ -211,7 +221,7 @@ export default function App() {
       setIsRecording(true);
       setIsRecordingPaused(false);
       setRecordingSeconds(0);
-      setServerTip('录音已开始，点击暂停可中断，停止后自动上传。');
+      setServerTip('学生口译录音已开始，可暂停去听素材，再继续翻译。');
       recordingTimerRef.current = window.setInterval(() => {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
@@ -261,52 +271,33 @@ export default function App() {
     }
 
     const wavBlob = createWavBlob(recordedBuffersRef.current, sampleRateRef.current);
-    const recordedFile = new File([wavBlob], `recording_${Date.now()}.wav`, { type: 'audio/wav' });
+    const recordedFile = new File([wavBlob], `student_interpretation_${Date.now()}.wav`, { type: 'audio/wav' });
     handleRecordedAudioUpload(recordedFile, wavBlob);
   };
 
   const handleRecordedAudioUpload = async (recordedFile, blob) => {
-    setFileName(recordedFile.name);
     const blobUrl = URL.createObjectURL(blob);
-    setAudioFileUrl(blobUrl);
-    setHints([]);
-    setRevealedHints([]);
-    setHintPool([]);
-    setStudentAudioUrl(null);
-    setStudentFileName('');
-    setDiagnosisReport(null);
-    setErrorMessage('');
-    setServerTip('录音已生成，正在上传到 AI 后端。请手动点击播放器回放。');
-    setLoading(true);
-    setSessionStatus('uploading');
-
-    try {
-      const response = await uploadAudioFile(recordedFile);
-      setSessionId(response.session_id);
-      setSessionStatus(response.status || 'processing');
-      setServerTip('AI 正在后台分析录音，请稍候...');
-    } catch (error) {
-      setErrorMessage(error.message);
-      setServerTip('录音上传失败，请重试。');
-      setLoading(false);
-      setSessionStatus('error');
-    }
+    await submitStudentAudio(recordedFile, blobUrl);
   };
 
   const handleStudentAudioUpload = async (event) => {
     const file = event.target.files[0];
     if (!file || !sessionId) return;
 
+    await submitStudentAudio(file, URL.createObjectURL(file));
+  };
+
+  const submitStudentAudio = async (file, objectUrl) => {
     setStudentFileName(file.name);
-    setStudentAudioUrl(URL.createObjectURL(file));
+    setStudentAudioUrl(objectUrl);
     setErrorMessage('');
     setServerTip('正在上传学生口译录音，AI 将进行诊断...');
     setGradingStatus('uploading');
 
     try {
-      await uploadStudentAudio(sessionId, file);
+      const uploadResult = await uploadStudentAudio(sessionId, file);
       setServerTip('学生口译上传成功，AI 正在评分...');
-      setGradingStatus('processing');
+      setGradingStatus(uploadResult.status === 'graded' ? 'completed' : 'processing');
       setDiagnosisReport(null);
 
       if (diagnosisPollRef.current) {
@@ -344,8 +335,28 @@ export default function App() {
 
   const createWavBlob = (buffers, sampleRate) => {
     const mergedBuffer = flattenAudioBuffers(buffers);
-    const wavBuffer = encodeWav(mergedBuffer, sampleRate);
+    const asrBuffer = resampleAudioBuffer(mergedBuffer, sampleRate, ASR_SAMPLE_RATE);
+    const wavBuffer = encodeWav(asrBuffer, ASR_SAMPLE_RATE);
     return new Blob([wavBuffer], { type: 'audio/wav' });
+  };
+
+  const resampleAudioBuffer = (samples, sourceRate, targetRate) => {
+    if (!samples.length || sourceRate === targetRate) {
+      return samples;
+    }
+    const ratio = sourceRate / targetRate;
+    const newLength = Math.floor(samples.length / ratio);
+    const result = new Float32Array(newLength);
+
+    for (let i = 0; i < newLength; i += 1) {
+      const sourceIndex = i * ratio;
+      const leftIndex = Math.floor(sourceIndex);
+      const rightIndex = Math.min(leftIndex + 1, samples.length - 1);
+      const weight = sourceIndex - leftIndex;
+      result[i] = samples[leftIndex] * (1 - weight) + samples[rightIndex] * weight;
+    }
+
+    return result;
   };
 
   const flattenAudioBuffers = (buffers) => {
@@ -395,14 +406,37 @@ export default function App() {
     }
   };
 
-  const revealHints = (currentTime) => {
-    const newHints = hintPool.filter((hint) => {
-      return !revealedHints.some((item) => item.id === hint.id) && (hint.timestamp || 0) <= currentTime + 0.5;
-    });
+  const getHintKey = (hint) => {
+    const text = (hint.source || hint.term || '').trim().toLowerCase();
+    const translation = (hint.translation || '').trim().toLowerCase();
+    const timestamp = Math.round((hint.timestamp || 0) * 10) / 10;
+    return `${text}|${translation}|${timestamp}`;
+  };
 
-    if (newHints.length > 0) {
-      setRevealedHints((prev) => [...prev, ...newHints].sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0)));
-      setServerTip('术语已锁定，继续盲听并注意表达。');
+  const mergeUniqueHints = (...hintGroups) => {
+    const seen = new Set();
+    const merged = [];
+    hintGroups.flat().forEach((hint, index) => {
+      if (!hint) return;
+      const key = getHintKey(hint) || `hint-${index}`;
+      if (seen.has(key)) return;
+      seen.add(key);
+      merged.push({ ...hint, id: hint.id || key });
+    });
+    return merged;
+  };
+
+  const revealHints = (currentTime) => {
+    const dueHints = hintPool.filter((hint) => (hint.timestamp || 0) <= currentTime + 0.5);
+
+    if (dueHints.length > 0) {
+      setRevealedHints((prev) => {
+        const merged = mergeUniqueHints(prev, dueHints).sort((a, b) => (a.timestamp || 0) - (b.timestamp || 0));
+        if (merged.length > prev.length) {
+          setServerTip('术语已锁定，继续盲听并注意表达。');
+        }
+        return merged;
+      });
     }
   };
 
@@ -417,7 +451,21 @@ export default function App() {
     document.body.removeChild(link);
   };
 
-  const activeHints = revealedHints.length > 0 ? revealedHints : hints;
+  const downloadStudentAudio = () => {
+    if (!studentAudioUrl || !studentFileName) return;
+
+    const link = document.createElement('a');
+    link.href = studentAudioUrl;
+    link.download = studentFileName;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const directionLabel = interpretationDirection === 'en-zh' ? '英译中' : '中译英';
+  const sourceLanguageLabel = interpretationDirection === 'en-zh' ? '英文素材' : '中文素材';
+  const targetLanguageLabel = interpretationDirection === 'en-zh' ? '中文口译' : '英文口译';
+  const activeHints = mergeUniqueHints(revealedHints.length > 0 ? revealedHints : hints);
   const hintTitle = sessionStatus === 'completed' ? '术语卡片已锁定' : '等待音频播放产生数据...';
 
   return (
@@ -431,11 +479,43 @@ export default function App() {
         </header>
 
         <div style={{ backgroundColor: '#ffffff', borderRadius: '24px', padding: '40px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.05), 0 2px 4px -1px rgba(0,0,0,0.03)', border: '1px solid #f1f5f9' }}>
+          <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px', flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontWeight: 700, color: '#0f172a', marginBottom: '4px' }}>口译方向</div>
+              <div style={{ color: '#64748b', fontSize: '13px' }}>{sourceLanguageLabel} → {targetLanguageLabel}</div>
+            </div>
+            <div style={{ display: 'inline-flex', padding: '4px', borderRadius: '12px', background: '#f1f5f9', border: '1px solid #e2e8f0' }}>
+              {[
+                { value: 'en-zh', label: '英译中' },
+                { value: 'zh-en', label: '中译英' },
+              ].map((item) => (
+                <button
+                  key={item.value}
+                  type="button"
+                  onClick={() => {
+                    if (sessionStatus === 'uploading' || sessionStatus === 'processing' || isRecording) return;
+                    setInterpretationDirection(item.value);
+                  }}
+                  style={{
+                    border: 'none',
+                    borderRadius: '9px',
+                    padding: '9px 16px',
+                    background: interpretationDirection === item.value ? '#2563eb' : 'transparent',
+                    color: interpretationDirection === item.value ? '#ffffff' : '#334155',
+                    fontWeight: 700,
+                    cursor: sessionStatus === 'uploading' || sessionStatus === 'processing' || isRecording ? 'not-allowed' : 'pointer',
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
           <div style={{ position: 'relative', border: '2px dashed #cbd5e1', borderRadius: '16px', padding: '40px 20px', textAlign: 'center', textTransform: 'none', backgroundColor: '#f8fafc' }}>
-            <input type="file" accept="audio/*" onChange={handleFileUpload} id="audio-upload" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
+            <input type="file" accept=".wav,.mp3,.m4a,audio/wav,audio/mpeg,audio/mp4" onChange={handleFileUpload} id="audio-upload" style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', opacity: 0, cursor: 'pointer' }} />
             <div style={{ fontSize: '40px', marginBottom: '12px' }}>{fileName ? '🎵' : '📁'}</div>
-            <h3 style={{ margin: '0 0 8px 0', color: '#334155', fontSize: '18px' }}>{fileName ? fileName : '点击或拖拽上传音频文件'}</h3>
-            <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>支持 MP3、WAV、M4A 等音频格式。</p>
+            <h3 style={{ margin: '0 0 8px 0', color: '#334155', fontSize: '18px' }}>{fileName ? fileName : `点击或拖拽上传${sourceLanguageLabel}`}</h3>
+            <p style={{ margin: 0, color: '#94a3b8', fontSize: '14px' }}>支持 WAV、MP3、M4A；非 WAV 会自动转换。</p>
           </div>
 
           <div style={{ marginTop: '20px', display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -443,18 +523,19 @@ export default function App() {
               <button
                 type="button"
                 onClick={startRecording}
+                disabled={!sessionId || sessionStatus !== 'completed'}
                 style={{
                   border: 'none',
                   borderRadius: '14px',
                   padding: '14px 22px',
-                  backgroundColor: '#2563eb',
+                  backgroundColor: !sessionId || sessionStatus !== 'completed' ? '#94a3b8' : '#2563eb',
                   color: '#ffffff',
                   fontWeight: 700,
-                  cursor: 'pointer',
+                  cursor: !sessionId || sessionStatus !== 'completed' ? 'not-allowed' : 'pointer',
                   boxShadow: '0 10px 25px rgba(37, 99, 235, 0.2)',
                 }}
               >
-                🎧 开始录音
+                🎧 录制学生口译
               </button>
             ) : (
               <>
@@ -488,12 +569,12 @@ export default function App() {
                     boxShadow: '0 10px 25px rgba(239, 68, 68, 0.2)',
                   }}
                 >
-                  ⏹️ 停止并上传
+                  ⏹️ 停止并提交
                 </button>
               </>
             )}
             <span style={{ color: '#475569', fontSize: '14px' }}>
-              {isRecording ? (isRecordingPaused ? '录音已暂停，可继续录制当前片段。' : '录音中，可随时暂停并继续。') : '先听一段，再录一段，支持中断继续。'}
+              {isRecording ? (isRecordingPaused ? `${targetLanguageLabel}录音已暂停，可继续听素材或继续翻译。` : `${targetLanguageLabel}录音中，可暂停去听下一段。`) : `当前方向：${directionLabel}。素材分析完成后，听一段、录一段。`}
             </span>
           </div>
 
@@ -533,9 +614,31 @@ export default function App() {
             )}
             {sessionId && (
               <div style={{ marginTop: '18px', display: 'flex', flexDirection: 'column', gap: '10px' }}>
-                <label style={{ display: 'block', fontWeight: 600, color: '#0f172a' }}>上传学生口译录音</label>
-                <input type="file" accept="audio/*" onChange={handleStudentAudioUpload} style={{ width: '100%' }} />
+                <label style={{ display: 'block', fontWeight: 600, color: '#0f172a' }}>上传学生{targetLanguageLabel}录音</label>
+                <input type="file" accept=".wav,.mp3,.m4a,audio/wav,audio/mpeg,audio/mp4" onChange={handleStudentAudioUpload} style={{ width: '100%' }} />
                 {studentAudioUrl && <div style={{ fontSize: '13px', color: '#64748b' }}>已选择：{studentFileName}</div>}
+                {studentAudioUrl && (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
+                    <audio controls src={studentAudioUrl} style={{ width: '100%', height: '40px', outline: 'none' }} />
+                    <button
+                      type="button"
+                      onClick={downloadStudentAudio}
+                      style={{
+                        alignSelf: 'flex-start',
+                        padding: '8px 14px',
+                        backgroundColor: '#10b981',
+                        color: '#ffffff',
+                        border: 'none',
+                        borderRadius: '8px',
+                        fontWeight: 600,
+                        cursor: 'pointer',
+                        fontSize: '13px',
+                      }}
+                    >
+                      下载学生口译录音
+                    </button>
+                  </div>
+                )}
                 {gradingStatus === 'processing' && <div style={{ fontSize: '13px', color: '#0f172a' }}>AI 评分进行中...</div>}
                 {diagnosisReport && (
                   <div style={{ marginTop: '12px', padding: '16px', background: '#f8fafc', borderRadius: '14px', border: '1px solid #e2e8f0' }}>

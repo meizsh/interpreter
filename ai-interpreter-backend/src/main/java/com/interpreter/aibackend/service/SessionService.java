@@ -24,7 +24,7 @@ public class SessionService {
     /**
      * 创建新会话
      */
-    public Session createSession(String audioFileName, String audioPath, Long audioSize) {
+    public Session createSession(String audioFileName, String audioPath, Long audioSize, String interpretationDirection) {
         String sessionId = UUID.randomUUID().toString();
 
         Session session = new Session();
@@ -32,6 +32,7 @@ public class SessionService {
         session.setAudioFileName(audioFileName);
         session.setAudioPath(audioPath);
         session.setAudioSize(audioSize);
+        session.setInterpretationDirection(interpretationDirection);
         session.setStatus("uploaded");
         session.setCreatedAt(LocalDateTime.now());
 

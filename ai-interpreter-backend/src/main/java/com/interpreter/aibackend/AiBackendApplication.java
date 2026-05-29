@@ -3,17 +3,16 @@ package com.interpreter.aibackend;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.scheduling.annotation.EnableAsync;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 @SpringBootApplication
 @EnableAsync
 public class AiBackendApplication {
+    private static final Logger logger = LoggerFactory.getLogger(AiBackendApplication.class);
+
     public static void main(String[] args) {
         SpringApplication.run(AiBackendApplication.class, args);
-        System.out.println("🚀 AI 口译辅助后端启动成功！");
-        System.out.println("📡 服务地址: http://localhost:8080");
-        System.out.println("🎙️ API 文档:");
-        System.out.println("  - 上传音频: POST /api/audio/upload");
-        System.out.println("  - 获取元数据: GET /api/session/{sessionId}/metadata");
-        System.out.println("  - 获取报告: GET /api/session/{sessionId}/report");
+        logger.info("AI interpreter backend started on http://localhost:8080");
     }
 }

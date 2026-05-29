@@ -8,15 +8,15 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 系统健康检查 Controller
+ * 绯荤粺鍋ュ悍妫€鏌?Controller
  */
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "http://localhost:5173")
+@CrossOrigin(origins = {"http://localhost:5173", "http://127.0.0.1:5173"})
 public class HealthController {
 
     /**
-     * 健康检查
+     * 鍋ュ悍妫€鏌?
      * GET /api/health
      */
     @GetMapping("/health")
@@ -30,16 +30,16 @@ public class HealthController {
     }
 
     /**
-     * 获取 API 信息
+     * 鑾峰彇 API 淇℃伅
      * GET /api/info
      */
     @GetMapping("/info")
     public ResponseEntity<?> getInfo() {
         JSONObject response = new JSONObject();
         response.put("code", 0);
-        response.put("name", "AI 口译辅助系统");
+        response.put("name", "AI 鍙ｈ瘧杈呭姪绯荤粺");
         response.put("version", "1.0.0");
-        response.put("description", "自适应人机协作口译训练沙盒");
+        response.put("description", "鑷€傚簲浜烘満鍗忎綔鍙ｈ瘧璁粌娌欑洅");
         
         JSONObject apis = new JSONObject();
         apis.put("upload_audio", "POST /api/audio/upload");

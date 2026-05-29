@@ -3,7 +3,10 @@ package com.interpreter.aibackend;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONArray;
 import com.alibaba.fastjson2.JSONObject;
+import com.interpreter.aibackend.config.BaiduApiConfig;
 import okhttp3.*;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.socket.TextMessage;
 import org.springframework.web.socket.WebSocketSession;
@@ -16,13 +19,17 @@ import java.util.concurrent.TimeUnit;
 
 @Component
 public class AiInterpreterHandler extends TextWebSocketHandler {
+    private static final Logger logger = LoggerFactory.getLogger(AiInterpreterHandler.class);
 
-    // 【重要】填入你的百度 API Key
-    private static final String API_KEY = "bce-v3/ALTAK-iQlwRVBqqVkVb3PXgE624/04ef93df19bc9cc4f5e9b13b1dc9f1f8ba0d38f9";
+    private final BaiduApiConfig baiduApiConfig;
 
     private final OkHttpClient httpClient = new OkHttpClient.Builder()
             .readTimeout(30, TimeUnit.SECONDS)
             .build();
+
+    public AiInterpreterHandler(BaiduApiConfig baiduApiConfig) {
+        this.baiduApiConfig = baiduApiConfig;
+    }
 
     @Override
     protected void handleTextMessage(WebSocketSession session, TextMessage message) throws Exception {
@@ -41,7 +48,7 @@ public class AiInterpreterHandler extends TextWebSocketHandler {
                     hintsJsonStr = hintsJsonStr.replaceAll("```json", "").replaceAll("```", "").trim();
                     hintsArray = JSON.parseArray(hintsJsonStr);
                 } catch (Exception e) {
-                    System.out.println("❌ JSON 解析失败，大模型返回的格式可能不标准: " + hintsJsonStr);
+                    logger.warn("LLM hints JSON parse failed");
                 }
             }
 
@@ -58,6 +65,12 @@ public class AiInterpreterHandler extends TextWebSocketHandler {
     }
 
     private String extractTermsWithBaiduLLM(String text) throws IOException {
+        String apiKey = baiduApiConfig.getLlm().getApiKey();
+        if (apiKey == null || apiKey.isBlank() || apiKey.startsWith("your-")) {
+            logger.warn("Baidu LLM API key is not configured for WebSocket hints");
+            return "[]";
+        }
+
         // 1. 升级为全新的 V2 接口地址（OpenAI 兼容标准）
         String url = "https://qianfan.baidubce.com/v2/chat/completions";
 
@@ -72,7 +85,7 @@ public class AiInterpreterHandler extends TextWebSocketHandler {
         JSONObject requestBody = new JSONObject();
         // 2. 在 JSON 请求体中动态指定你拥有 100万免费额度的新模型！
         // 如果想换成 DeepSeek，直接把这里改成 "deepseek-v3" 即可
-        requestBody.put("model", "ernie-x1-turbo-32k"); 
+        requestBody.put("model", baiduApiConfig.getLlm().getModel()); 
         requestBody.put("messages", new JSONObject[]{messageObj});
         requestBody.put("temperature", 0.1);
 
@@ -83,18 +96,13 @@ public class AiInterpreterHandler extends TextWebSocketHandler {
 
         Request request = new Request.Builder()
                 .url(url)
-                // 依然使用你刚才填写的 bce-v3 密钥
-                .addHeader("Authorization", "Bearer " + API_KEY)
+                .addHeader("Authorization", "Bearer " + apiKey)
                 .post(body)
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
             if (response.body() != null) {
                 String responseStr = response.body().string();
-                System.out.println("=====================================");
-                System.out.println("🤖 【百度API原始返回】: \n" + responseStr);
-                System.out.println("=====================================");
-                
                 if (response.isSuccessful()) {
                     JSONObject resultJson = JSON.parseObject(responseStr);
                     // 3. 解析 OpenAI 标准格式的返回体：一层层剥开 choices -> message -> content
@@ -103,11 +111,11 @@ public class AiInterpreterHandler extends TextWebSocketHandler {
                             .getJSONObject("message")
                             .getString("content");
                 } else {
-                    System.out.println("❌ HTTP 请求失败，状态码: " + response.code());
+                    logger.warn("Baidu LLM hints request failed, status={}", response.code());
                 }
             }
         } catch (Exception e) {
-            System.out.println("❌ 网络请求发生异常: " + e.getMessage());
+            logger.warn("Baidu LLM hints request failed: {}", e.getMessage());
         }
         return "[]";
     }

@@ -14,6 +14,12 @@ target/
 *.jar
 *.war
 .mvn/
+*.log
+build_*.txt
+uploads/
+ai-interpreter-backend/uploads/
+ai-interpreter-frontend/node_modules/
+ai-interpreter-frontend/dist/
 
 # ========================
 # IDE 及系统忽略 (VS Code/Windows)

@@ -1,45 +1,49 @@
 const BASE_URL = "http://localhost:8080/api";
 
-// 1. 上传演讲原音音频
-export const uploadAudioFile = async (file) => {
+const requestJson = async (url, options) => {
+  let response;
+  try {
+    response = await fetch(url, options);
+  } catch (error) {
+    throw new Error("无法连接后端服务，请确认后端已启动。");
+  }
+
+  const data = await response.json().catch(() => ({}));
+  if (!response.ok || data.code === -1) {
+    throw new Error(data.message || `请求失败：${response.status}`);
+  }
+  return data;
+};
+
+export const uploadAudioFile = async (file, direction = "en-zh") => {
   const formData = new FormData();
   formData.append("file", file);
-  const response = await fetch(`${BASE_URL}/audio/upload`, { method: "POST", body: formData });
-  return await response.json();
+  formData.append("direction", direction);
+  return requestJson(`${BASE_URL}/audio/upload`, { method: "POST", body: formData });
 };
 
-// 2. 获取 Session 状态
 export const getSessionStatus = async (sessionId) => {
-  const response = await fetch(`${BASE_URL}/session/${sessionId}`);
-  return await response.json();
+  return requestJson(`${BASE_URL}/session/${sessionId}/status`);
 };
 
-// 3. 获取会话元数据（术语卡片、原文、标准答案）
 export const getSessionMetadata = async (sessionId) => {
-  const response = await fetch(`${BASE_URL}/session/${sessionId}/metadata`);
-  return await response.json();
+  return requestJson(`${BASE_URL}/session/${sessionId}/metadata`);
 };
 
-// 4. 上传学生口译录音音频
 export const uploadStudentAudio = async (sessionId, audioBlob) => {
   const formData = new FormData();
-  // 必须和后端 Controller 要求的入参 @RequestParam("file") 一致
-  formData.append("file", audioBlob, "student_expression.wav"); 
-  const response = await fetch(`${BASE_URL}/audio/${sessionId}/student-audio`, { method: "POST", body: formData });
-  return await response.json();
+  formData.append("studentAudio", audioBlob, audioBlob.name || "student_expression.wav");
+  return requestJson(`${BASE_URL}/audio/${sessionId}/student-audio`, { method: "POST", body: formData });
 };
 
-// 5. 获取诊断报告
 export const getDiagnosisReport = async (sessionId) => {
-  const response = await fetch(`${BASE_URL}/session/${sessionId}/report`);
-  return await response.json();
+  return requestJson(`${BASE_URL}/session/${sessionId}/report`);
 };
 
-// 向后兼容的对象导出
 export const apiService = {
   uploadAudio: uploadAudioFile,
   getSession: getSessionStatus,
-  uploadStudentAudio: uploadStudentAudio,
-  getSessionMetadata: getSessionMetadata,
-  getDiagnosisReport: getDiagnosisReport
+  uploadStudentAudio,
+  getSessionMetadata,
+  getDiagnosisReport
 };

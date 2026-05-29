@@ -11,6 +11,7 @@ public class Session {
     private String audioFileName;
     private String audioPath;
     private Long audioSize;
+    private String interpretationDirection;
     
     // 原文和翻译
     private String originalText;
@@ -43,6 +44,9 @@ public class Session {
 
     public Long getAudioSize() { return audioSize; }
     public void setAudioSize(Long audioSize) { this.audioSize = audioSize; }
+
+    public String getInterpretationDirection() { return interpretationDirection; }
+    public void setInterpretationDirection(String interpretationDirection) { this.interpretationDirection = interpretationDirection; }
 
     public String getOriginalText() { return originalText; }
     public void setOriginalText(String originalText) { this.originalText = originalText; }

@@ -27,14 +27,18 @@ public class BaiduApiService {
     private BaiduApiConfig baiduApiConfig;
 
     private final OkHttpClient httpClient = new OkHttpClient();
-    private String cachedAccessToken;
-    private long tokenExpireTime;
+    private String cachedAsrAccessToken;
+    private long asrTokenExpireTime;
+    private String cachedLlmAccessToken;
+    private long llmTokenExpireTime;
 
     /**
      * 获取 Access Token (百度 OAuth)
      */
     public String getAccessToken(boolean useAsrCredentials) throws Exception {
         // 检查缓存的 token 是否还有效
+        String cachedAccessToken = useAsrCredentials ? cachedAsrAccessToken : cachedLlmAccessToken;
+        long tokenExpireTime = useAsrCredentials ? asrTokenExpireTime : llmTokenExpireTime;
         if (cachedAccessToken != null && System.currentTimeMillis() < tokenExpireTime) {
             logger.debug("使用缓存的 Access Token");
             return cachedAccessToken;
@@ -69,14 +73,21 @@ public class BaiduApiService {
                 throw new RuntimeException("OAuth error: " + jsonResponse.getString("error_description"));
             }
 
-            cachedAccessToken = jsonResponse.getString("access_token");
+            String accessToken = jsonResponse.getString("access_token");
             long expiresIn = jsonResponse.getLongValue("expires_in");
 
             // 设置过期时间 (提前 5 分钟过期)
-            tokenExpireTime = System.currentTimeMillis() + (expiresIn - 300) * 1000;
+            long expiresAt = System.currentTimeMillis() + (expiresIn - 300) * 1000;
+            if (useAsrCredentials) {
+                cachedAsrAccessToken = accessToken;
+                asrTokenExpireTime = expiresAt;
+            } else {
+                cachedLlmAccessToken = accessToken;
+                llmTokenExpireTime = expiresAt;
+            }
 
             logger.info("✓ Access Token 获取成功，有效期：{} 秒", expiresIn);
-            return cachedAccessToken;
+            return accessToken;
         }
     }
 

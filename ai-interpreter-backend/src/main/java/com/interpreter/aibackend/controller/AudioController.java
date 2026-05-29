@@ -15,7 +15,7 @@ import java.util.Map;
 
 @RestController
 @RequestMapping("/api/audio")
-@CrossOrigin(origins = "http://localhost:5173") // 保持您原有的前端跨域允许
+@CrossOrigin(origins = {"http://localhost:5173", "http://127.0.0.1:5173"})
 public class AudioController {
     private static final Logger logger = LoggerFactory.getLogger(AudioController.class);
 
@@ -26,21 +26,23 @@ public class AudioController {
     private SessionService sessionService;
 
     /**
-     * 1. 演讲原音上传（触发 AI 自动洗出：原文 + 标答 + 术语轴）
+     * 1. 濠曟棁顔夐崢鐔肩叾娑撳﹣绱堕敍鍫Ｐ曢崣?AI 閼奉亜濮╁ú妤€鍤敍姘斧閺?+ 閺嶅洨鐡?+ 閺堫垵顕㈡潪杈剧礆
      */
     @PostMapping("/upload")
-    public ResponseEntity<?> uploadAudio(@RequestParam("file") MultipartFile file) {
+    public ResponseEntity<?> uploadAudio(
+            @RequestParam("file") MultipartFile file,
+            @RequestParam(value = "direction", defaultValue = "en-zh") String direction) {
         try {
             if (file.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "文件为空"));
+                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "閺傚洣娆㈡稉铏光敄"));
             }
 
             String filename = file.getOriginalFilename();
-            // 保存并创建会话
-            Session session = audioProcessingService.saveAudioFile(file.getBytes(), filename);
-            logger.info("✓ 原音已上传，激活 Session ID: {}", session.getSessionId());
+            // 娣囨繂鐡ㄩ獮璺哄灡瀵よ桨绱扮拠?
+            Session session = audioProcessingService.saveAudioFile(file.getBytes(), filename, direction);
+            logger.info("閴?閸樼喖鐓跺韫瑐娴肩媴绱濆┑鈧ú?Session ID: {}", session.getSessionId());
 
-            // 异步触发后台处理链路 (ASR + 翻译 + 术语提取)
+            // 瀵倹顒炵憴锕€褰傞崥搴″酱婢跺嫮鎮婇柧鎹愮熅 (ASR + 缂堟槒鐦?+ 閺堫垵顕㈤幓鎰絿)
             audioProcessingService.processAudioAsync(session.getSessionId());
 
             JSONObject response = new JSONObject();
@@ -54,49 +56,39 @@ public class AudioController {
     }
 
     /**
-     * 2. 接收学生口译录音并【同步等待评卷完成】（省去前端复杂的多次轮询）
+     * 2. 閹恒儲鏁圭€涳妇鏁撻崣锝堢槯瑜版洟鐓堕獮韬测偓鎰倱濮濄儳鐡戝鍛扮槑閸楀嘲鐣幋鎰┾偓鎴礄閻礁骞撻崜宥囶伂婢跺秵娼呴惃鍕樋濞喡ょ枂鐠囶澁绱?
      */
     @PostMapping("/{sessionId}/student-audio")
     public ResponseEntity<?> uploadStudentAudio(
             @PathVariable String sessionId,
             @RequestParam("studentAudio") MultipartFile file) {
         try {
-            logger.info("🎤 收到学生口译录音，开始阅卷: {}", sessionId);
-
-            // 1. 保存并识别学生口译内容
-            audioProcessingService.processStudentAudio(sessionId, file.getBytes(), file.getOriginalFilename());
-
-            // 2. 触发大模型诊断系统（进行原文、标准答案、学生译文的三方比对）
-            audioProcessingService.diagnoseStudentTranslation(sessionId);
-
-            // 3. 阻塞等待大模型阅卷诊断报告生成（最多等8秒，答辩和日常训练最稳妥的联调技巧）
-            Session finalSession = null;
-            int retry = 0;
-            while (retry < 8) {
-                Thread.sleep(1000);
-                finalSession = sessionService.getSession(sessionId);
-                if (finalSession != null && finalSession.getDiagnosisReport() != null) {
-                    break;
-                }
-                retry++;
+            if (file.isEmpty()) {
+                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "Student audio file is empty"));
             }
 
-            // 直接将热腾腾的、比对好的多维报告数据一次性打包返给前端
+            Session session = sessionService.getSession(sessionId);
+            if (session == null) {
+                return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                        .body(Map.of("code", -1, "message", "Session not found"));
+            }
+
+            audioProcessingService.processStudentAudioAndDiagnoseAsync(
+                    sessionId,
+                    file.getBytes(),
+                    file.getOriginalFilename()
+            );
+
             JSONObject response = new JSONObject();
             response.put("code", 0);
-            response.put("status", "COMPLETED");
-            response.put("score", finalSession.getDiagnosisReport().getScore());
-            response.put("accuracyAnalysis", finalSession.getDiagnosisReport().getAccuracyAnalysis());
-            response.put("grammarStyle", finalSession.getDiagnosisReport().getGrammarStyle());
-            response.put("suggestions", finalSession.getDiagnosisReport().getSuggestions());
-            response.put("originalText", finalSession.getOriginalText());
-            response.put("standardTranslation", finalSession.getStandardTranslation());
-            response.put("studentTranslation", finalSession.getStudentTranslation());
-
-            return ResponseEntity.ok(response);
+            response.put("status", "processing");
+            response.put("message", "Student audio accepted for diagnosis");
+            response.put("session_id", sessionId);
+            return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
         } catch (Exception e) {
-            logger.error("❌ 评卷失败", e);
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("code", -1, "message", e.getMessage()));
+            logger.error("Student audio upload failed", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("code", -1, "message", e.getMessage()));
         }
     }
 }
