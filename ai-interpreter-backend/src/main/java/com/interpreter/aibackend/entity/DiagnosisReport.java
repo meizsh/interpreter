@@ -3,16 +3,16 @@ package com.interpreter.aibackend.entity;
 import java.util.List;
 
 /**
- * 诊断报告实体
+ * 学生口译诊断报告。
  */
 public class DiagnosisReport {
-    private int score;                      // 综合评分 (0-100)
-    private String accuracy;                // 准确度分析
-    private String completeness;            // 完整性分析
-    private String fluency;                 // 流畅性分析
-    private String terminology;             // 术语准确性分析
-    private List<String> mainIssues;        // 主要问题列表
-    private List<String> suggestions;       // 改进建议列表
+    private int score;                  // 综合评分，范围 0-100。
+    private String accuracy;            // 准确度分析。
+    private String completeness;        // 完整性分析。
+    private String fluency;             // 流畅性分析。
+    private String terminology;         // 术语和数字处理分析。
+    private List<String> mainIssues;    // 主要问题列表。
+    private List<String> suggestions;   // 改进建议列表。
 
     public DiagnosisReport() {
         this.score = 0;
@@ -28,7 +28,6 @@ public class DiagnosisReport {
         this.terminology = terminology;
     }
 
-    // Getters and Setters
     public int getScore() { return score; }
     public void setScore(int score) { this.score = score; }
 

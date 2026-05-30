@@ -8,7 +8,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 绯荤粺鍋ュ悍妫€鏌?Controller
+ * 后端基础健康检查接口。
  */
 @RestController
 @RequestMapping("/api")
@@ -16,8 +16,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class HealthController {
 
     /**
-     * 鍋ュ悍妫€鏌?
-     * GET /api/health
+     * 简单健康检查。
      */
     @GetMapping("/health")
     public ResponseEntity<?> health() {
@@ -30,17 +29,16 @@ public class HealthController {
     }
 
     /**
-     * 鑾峰彇 API 淇℃伅
-     * GET /api/info
+     * 查看后端基础 API 信息。
      */
     @GetMapping("/info")
     public ResponseEntity<?> getInfo() {
         JSONObject response = new JSONObject();
         response.put("code", 0);
-        response.put("name", "AI 鍙ｈ瘧杈呭姪绯荤粺");
+        response.put("name", "AI 口译训练系统");
         response.put("version", "1.0.0");
-        response.put("description", "鑷€傚簲浜烘満鍗忎綔鍙ｈ瘧璁粌娌欑洅");
-        
+        response.put("description", "基于语音识别和大模型的中英双向口译训练系统");
+
         JSONObject apis = new JSONObject();
         apis.put("upload_audio", "POST /api/audio/upload");
         apis.put("get_metadata", "GET /api/session/{sessionId}/metadata");
@@ -49,7 +47,7 @@ public class HealthController {
         apis.put("delete_session", "DELETE /api/session/{sessionId}");
         apis.put("upload_student_audio", "POST /api/audio/{sessionId}/student-audio");
         response.put("apis", apis);
-        
+
         return ResponseEntity.ok(response);
     }
 }

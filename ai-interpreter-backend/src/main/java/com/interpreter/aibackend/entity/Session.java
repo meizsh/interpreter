@@ -4,7 +4,8 @@ import java.time.LocalDateTime;
 import java.util.List;
 
 /**
- * 口译会话实体
+ * 口译训练会话。
+ * 一个会话对应一次素材上传，以及后续一次或多次学生口译诊断。
  */
 public class Session {
     private String sessionId;
@@ -12,27 +13,26 @@ public class Session {
     private String audioPath;
     private Long audioSize;
     private String interpretationDirection;
-    
-    // 原文和翻译
+
+    // 素材分析结果。
     private String originalText;
     private String standardTranslation;
     private List<TermHint> termHints;
-    
-    // 学生翻译
+
+    // 学生口译结果。
     private String studentTranslation;
     private String studentAudioPath;
-    
-    // 诊断报告
+
+    // 诊断报告。
     private DiagnosisReport diagnosisReport;
-    
-    // 状态和时间戳
-    private String status; // uploaded, processing, completed, graded, error
+
+    // 生命周期状态：uploaded, processing, completed, graded, error。
+    private String status;
     private String errorMessage;
     private LocalDateTime createdAt;
     private LocalDateTime processedAt;
     private LocalDateTime gradedAt;
 
-    // Getters and Setters
     public String getSessionId() { return sessionId; }
     public void setSessionId(String sessionId) { this.sessionId = sessionId; }
 

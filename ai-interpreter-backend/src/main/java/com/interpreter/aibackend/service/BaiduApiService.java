@@ -3,21 +3,23 @@ package com.interpreter.aibackend.service;
 import com.alibaba.fastjson2.JSON;
 import com.alibaba.fastjson2.JSONObject;
 import com.interpreter.aibackend.config.BaiduApiConfig;
-import okhttp3.*;
+import okhttp3.FormBody;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Request;
+import okhttp3.RequestBody;
+import okhttp3.Response;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.io.IOException;
-import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Base64;
-import java.util.HashMap;
-import java.util.Map;
 
 /**
- * 百度 API 基础服务（OAuth、HTTP 请求等）
+ * 百度 API 基础服务。
+ * 负责 OAuth Access Token 获取、HTTP 请求，以及 ASR 所需的通用编码工具。
  */
 @Service
 public class BaiduApiService {
@@ -33,10 +35,10 @@ public class BaiduApiService {
     private long llmTokenExpireTime;
 
     /**
-     * 获取 Access Token (百度 OAuth)
+     * 获取百度 OAuth Access Token。
+     * ASR 仍使用 OAuth 方式；新版千帆 LLM 使用 Bearer API Key，不依赖这个方法。
      */
     public String getAccessToken(boolean useAsrCredentials) throws Exception {
-        // 检查缓存的 token 是否还有效
         String cachedAccessToken = useAsrCredentials ? cachedAsrAccessToken : cachedLlmAccessToken;
         long tokenExpireTime = useAsrCredentials ? asrTokenExpireTime : llmTokenExpireTime;
         if (cachedAccessToken != null && System.currentTimeMillis() < tokenExpireTime) {
@@ -44,9 +46,7 @@ public class BaiduApiService {
             return cachedAccessToken;
         }
 
-        logger.info("获取新的 Access Token...");
-        String url = "https://aip.baidubce.com/oauth/2.0/token";
-
+        logger.info("正在获取新的百度 Access Token");
         String apiKey = useAsrCredentials ? baiduApiConfig.getAsr().getApiKey() : baiduApiConfig.getLlm().getApiKey();
         String secretKey = useAsrCredentials ? baiduApiConfig.getAsr().getSecretKey() : baiduApiConfig.getLlm().getSecretKey();
 
@@ -57,26 +57,25 @@ public class BaiduApiService {
                 .build();
 
         Request request = new Request.Builder()
-                .url(url)
+                .url("https://aip.baidubce.com/oauth/2.0/token")
                 .post(body)
                 .build();
 
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                throw new RuntimeException("Failed to get access token: " + response.code());
+                throw new RuntimeException("获取百度 Access Token 失败，HTTP 状态码：" + response.code());
             }
 
-            String responseBody = response.body().string();
+            String responseBody = response.body() == null ? "" : response.body().string();
             JSONObject jsonResponse = JSON.parseObject(responseBody);
-
             if (jsonResponse.containsKey("error")) {
-                throw new RuntimeException("OAuth error: " + jsonResponse.getString("error_description"));
+                throw new RuntimeException("百度 OAuth 错误：" + jsonResponse.getString("error_description"));
             }
 
             String accessToken = jsonResponse.getString("access_token");
             long expiresIn = jsonResponse.getLongValue("expires_in");
 
-            // 设置过期时间 (提前 5 分钟过期)
+            // 提前 5 分钟过期，避免临界时间请求失败。
             long expiresAt = System.currentTimeMillis() + (expiresIn - 300) * 1000;
             if (useAsrCredentials) {
                 cachedAsrAccessToken = accessToken;
@@ -86,16 +85,16 @@ public class BaiduApiService {
                 llmTokenExpireTime = expiresAt;
             }
 
-            logger.info("✓ Access Token 获取成功，有效期：{} 秒", expiresIn);
+            logger.info("百度 Access Token 获取成功，有效期 {} 秒", expiresIn);
             return accessToken;
         }
     }
 
     /**
-     * 发送 HTTP POST 请求
+     * 发送 JSON POST 请求。
      */
     public String postRequest(String url, String jsonBody) throws Exception {
-        logger.debug("POST 请求: {}", url);
+        logger.debug("发送 POST 请求：{}", url);
 
         RequestBody body = RequestBody.create(
                 jsonBody,
@@ -109,17 +108,17 @@ public class BaiduApiService {
 
         try (Response response = httpClient.newCall(request).execute()) {
             if (!response.isSuccessful()) {
-                throw new RuntimeException("HTTP 请求失败: " + response.code());
+                throw new RuntimeException("HTTP 请求失败，状态码：" + response.code());
             }
 
-            String responseBody = response.body().string();
-            logger.debug("响应: {}", responseBody);
+            String responseBody = response.body() == null ? "" : response.body().string();
+            logger.debug("HTTP 响应：{}", responseBody);
             return responseBody;
         }
     }
 
     /**
-     * MD5 哈希计算（百度 ASR 需要）
+     * 计算 MD5 哈希。
      */
     public static String getMD5Hash(byte[] data) throws Exception {
         MessageDigest md = MessageDigest.getInstance("MD5");
@@ -134,14 +133,14 @@ public class BaiduApiService {
     }
 
     /**
-     * Base64 编码
+     * Base64 编码。
      */
     public static String encodeBase64(byte[] data) {
         return Base64.getEncoder().encodeToString(data);
     }
 
     /**
-     * Base64 解码
+     * Base64 解码。
      */
     public static byte[] decodeBase64(String data) {
         return Base64.getDecoder().decode(data);

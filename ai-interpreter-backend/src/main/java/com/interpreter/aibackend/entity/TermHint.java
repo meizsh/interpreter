@@ -1,13 +1,13 @@
 package com.interpreter.aibackend.entity;
 
 /**
- * 术语提示实体
+ * 实时术语提示卡片。
  */
 public class TermHint {
-    private String term;              // 英文术语
-    private String translation;       // 中文翻译
-    private Double timestamp;         // 出现时间（秒）
-    private String category;          // 分类：术语、人名、数字等
+    private String term;          // 源语中的术语或短语。
+    private String translation;   // 目标语参考译法。
+    private Double timestamp;     // 预计出现时间，单位：秒。
+    private String category;      // 分类：术语、人名、数字、机构、短语等。
 
     public TermHint() {}
 
@@ -24,7 +24,6 @@ public class TermHint {
         this.category = category;
     }
 
-    // Getters and Setters
     public String getTerm() { return term; }
     public void setTerm(String term) { this.term = term; }
 

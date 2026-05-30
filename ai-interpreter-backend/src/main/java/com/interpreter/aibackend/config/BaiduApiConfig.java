@@ -4,23 +4,23 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.stereotype.Component;
 
 /**
- * 百度 API 配置
+ * 百度 API 配置。
  */
 @Component
 @ConfigurationProperties(prefix = "baidu")
 public class BaiduApiConfig {
 
-    // ASR (语音识别) 配置
+    // 百度语音识别配置。
     private Asr asr = new Asr();
-    
-    // LLM (大模型) 配置
+
+    // 百度千帆大模型配置。
     private Llm llm = new Llm();
 
     public static class Asr {
         private String apiKey;
         private String secretKey;
         private String appId;
-        private String format = "mp3";
+        private String format = "wav";
         private int rate = 16000;
 
         public String getApiKey() { return apiKey; }
@@ -42,7 +42,7 @@ public class BaiduApiConfig {
     public static class Llm {
         private String apiKey;
         private String secretKey;
-        private String model = "ernie-3.5-8k-0701";
+        private String model = "ernie-x1-turbo-32k";
         private double temperature = 0.7;
         private double topP = 0.9;
         private int maxOutputTokens = 2000;

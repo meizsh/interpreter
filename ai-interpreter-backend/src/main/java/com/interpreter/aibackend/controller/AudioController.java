@@ -9,10 +9,20 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
+import org.springframework.web.bind.annotation.CrossOrigin;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.multipart.MultipartFile;
+
 import java.util.Map;
 
+/**
+ * 音频上传接口。
+ * 包含素材音频上传和学生口译录音上传两个入口。
+ */
 @RestController
 @RequestMapping("/api/audio")
 @CrossOrigin(origins = {"http://localhost:5173", "http://127.0.0.1:5173"})
@@ -26,7 +36,7 @@ public class AudioController {
     private SessionService sessionService;
 
     /**
-     * 1. 濠曟棁顔夐崢鐔肩叾娑撳﹣绱堕敍鍫Ｐ曢崣?AI 閼奉亜濮╁ú妤€鍤敍姘斧閺?+ 閺嶅洨鐡?+ 閺堫垵顕㈡潪杈剧礆
+     * 上传口译素材音频，并启动异步处理流程。
      */
     @PostMapping("/upload")
     public ResponseEntity<?> uploadAudio(
@@ -34,15 +44,13 @@ public class AudioController {
             @RequestParam(value = "direction", defaultValue = "en-zh") String direction) {
         try {
             if (file.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "閺傚洣娆㈡稉铏光敄"));
+                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "音频文件不能为空"));
             }
 
             String filename = file.getOriginalFilename();
-            // 娣囨繂鐡ㄩ獮璺哄灡瀵よ桨绱扮拠?
             Session session = audioProcessingService.saveAudioFile(file.getBytes(), filename, direction);
-            logger.info("閴?閸樼喖鐓跺韫瑐娴肩媴绱濆┑鈧ú?Session ID: {}", session.getSessionId());
+            logger.info("素材音频上传成功，Session ID: {}", session.getSessionId());
 
-            // 瀵倹顒炵憴锕€褰傞崥搴″酱婢跺嫮鎮婇柧鎹愮熅 (ASR + 缂堟槒鐦?+ 閺堫垵顕㈤幓鎰絿)
             audioProcessingService.processAudioAsync(session.getSessionId());
 
             JSONObject response = new JSONObject();
@@ -51,12 +59,14 @@ public class AudioController {
             response.put("status", "processing");
             return ResponseEntity.ok(response);
         } catch (Exception e) {
-            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(Map.of("code", -1, "message", e.getMessage()));
+            logger.error("素材音频上传失败", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("code", -1, "message", e.getMessage()));
         }
     }
 
     /**
-     * 2. 閹恒儲鏁圭€涳妇鏁撻崣锝堢槯瑜版洟鐓堕獮韬测偓鎰倱濮濄儳鐡戝鍛扮槑閸楀嘲鐣幋鎰┾偓鎴礄閻礁骞撻崜宥囶伂婢跺秵娼呴惃鍕樋濞喡ょ枂鐠囶澁绱?
+     * 上传学生口译录音，并启动异步诊断流程。
      */
     @PostMapping("/{sessionId}/student-audio")
     public ResponseEntity<?> uploadStudentAudio(
@@ -64,13 +74,13 @@ public class AudioController {
             @RequestParam("studentAudio") MultipartFile file) {
         try {
             if (file.isEmpty()) {
-                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "Student audio file is empty"));
+                return ResponseEntity.badRequest().body(Map.of("code", -1, "message", "学生口译录音不能为空"));
             }
 
             Session session = sessionService.getSession(sessionId);
             if (session == null) {
                 return ResponseEntity.status(HttpStatus.NOT_FOUND)
-                        .body(Map.of("code", -1, "message", "Session not found"));
+                        .body(Map.of("code", -1, "message", "会话不存在"));
             }
 
             audioProcessingService.processStudentAudioAndDiagnoseAsync(
@@ -82,11 +92,11 @@ public class AudioController {
             JSONObject response = new JSONObject();
             response.put("code", 0);
             response.put("status", "processing");
-            response.put("message", "Student audio accepted for diagnosis");
+            response.put("message", "学生口译录音已接收，正在生成诊断报告");
             response.put("session_id", sessionId);
             return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
         } catch (Exception e) {
-            logger.error("Student audio upload failed", e);
+            logger.error("学生口译录音上传失败", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("code", -1, "message", e.getMessage()));
         }
